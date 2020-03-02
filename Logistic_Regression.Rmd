@@ -1,0 +1,153 @@
+---
+title: 'Appendix 2: Logistic Regression'
+author: "Victor Chinyemba [University of Brighton]"
+date: "September 13, 2018"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r warning=FALSE, error=FALSE,message=FALSE}
+#Required Libraries
+library(foreign)
+library(nnet)
+library(ggplot2)
+library(reshape2)
+library(car)
+library(MASS)
+library(rcompanion)
+library(leaps)
+library(magrittr)
+library(randomForest)
+library(party)
+library(pROC)
+library(e1071)
+library(rpart)
+library(ROCR)
+library(dplyr)
+library(caret)
+
+```
+
+
+##Data Preperation
+
+Most data preparation was already done in excel and SPSS Modeler, where various data transformation and treatment of null and blank values were treated. On the other hand, the variables selected are only 35 based on literature evidence and prior researches conducted in the country by the government and its partners (such as the world bank, UNICEF, and UNDP).
+
+```{r }
+#Read data
+
+data.aggregate<- read.csv("C:/Users/Victor/Desktop/data.new.csv",header = T)
+
+
+data.aggregate$Who.fetches.water<-NULL #this was a variable to measure child labour and so it may not so much  
+str(data.aggregate)
+
+
+```
+
+
+##Logistic Regression 
+
+Using backward selection of predictor variables, the logistic regression model is built with null and full models, as shown below. 
+
+```{r warning=FALSE, error=FALSE, message=FALSE}
+table(data.aggregate$Area, data.aggregate$Funeral )
+
+#stepwise backward selection
+full.logistic<-glm(Funeral ~., data = data.aggregate, family = binomial(link = 'logit'))
+#backward stepwise selection 
+model.backward<- stepAIC(full.logistic, data=data.aggregate, direction = "both", trace = 0) # trace = 0 will suppress step by step output.
+formula(model.backward) #calls for the best model formula
+summary(model.backward) #calls for the summary results of the model
+
+```
+
+We shall now build a new model based on the suggested stepwise model.This time we shall exclude the variables that are not significant, and particularly the source of drinking and other uses. 
+
+```{r}
+
+
+final.model<-glm(Funeral ~ Number.of.Rooms + House.Ownership + Collects.Firewood + 
+    Aid.6.months + Distance.Water + Water.Treatment + Head.Age + Head.Gender, family = binomial(link = "logit"), 
+    data = data.aggregate)
+
+summary(final.model)
+```
+
+
+
+##Interpretation of the Results
+According to the model, the likelihood of a family having a death in their family is dependent on the following factors:
+
+*   Living arrangements: renting - p.value 0.00825
+*   Collection of firewood (yes) - p.vlue 2.66e-06
+*   Aid in past 6 months (yes) - p.value 0.03343
+*   Distance to source of water (less than 100m) - p.value 0.00257
+*   Water treatment (yes) - p.value 0.00585
+*   Head of family gender (male) - p.value 0.03183
+
+The rest of the variables were not found to be significant in influencing the deaths in households in Angola.
+
+##Model Equation
+
+The model equation shall be as follows:
+
+*   p(Deaths = 1) = 1/(1+exp{-(-3.84172  + (b1  x No of rooms) + (b2  x house ownership) + (b3 x Firewood Collection) + 
++(b4 x Aid in past 6 months) + (b5 x Distance to water source) + (b6 x Water treatment) + (b7 x Head of family gender)})
+
+
+
+##Model Evaluation
+
+The model's area under the curve is 0.6125653, meaning that is 61.26% able to discriminate between the two categories which comprise our target variable.
+
+```{r}
+# Compute AUC for predicting Class with the model
+prob <- predict(final.model, newdata=data.aggregate, type="response")
+pred <- prediction(prob, data.aggregate$Funeral)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf)
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+
+
+
+```
+
+##K-Fold Cross Validation
+The K-fold cross validation uses 
+
+
+```{r warning=FALSE, error=FALSE, message=FALSE}
+
+flds <- createFolds(1:(dim(data.aggregate)[1]), k = 10, list = TRUE, returnTrain = FALSE)
+K = 10
+AC_all = 0
+for (i in 1:K){
+  TEST_SET = flds[[i]]
+  TRAIN_SET = setdiff(1:(dim(data.aggregate)[1]), TEST_SET)
+  
+  model<-train(Funeral ~ Number.of.Rooms + House.Ownership + Collects.Firewood + 
+    Aid.6.months + Distance.Water + Water.Treatment + Head.Age + 
+    Head.Gender,data=data.aggregate[TRAIN_SET,], method="glm", family=binomial())
+  pred = predict(model, data.aggregate[TEST_SET,])
+  TAB = table(pred, data.aggregate$Funeral[TEST_SET])
+  AC_all = AC_all+(TAB[1,1]+TAB[2,2])/sum(TAB)/K
+}
+
+AC_all
+
+print(model)
+
+```
+
+Using the K-folds validation,we can see overall accuracy of the model's predictions is 0.9289086 (93%). Which means that the model peformed very well in predicting the outcome variable against the predictors. 
+
+
+
+
+.......
+
+
